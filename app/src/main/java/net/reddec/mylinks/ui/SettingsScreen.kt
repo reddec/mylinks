@@ -84,7 +84,7 @@ fun SettingsScreen(
                 Column(Modifier.weight(1f)) {
                     Kicker("Article text offline")
                     Spacer(Modifier.height(4.dp))
-                    Meta("Downloads a few articles per sync for offline reading")
+                    Meta("Downloads every article Shiori has a copy of, in the background")
                 }
                 Switch(
                     checked = state.offlineText,

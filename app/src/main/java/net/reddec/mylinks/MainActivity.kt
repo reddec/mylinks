@@ -37,7 +37,6 @@ import net.reddec.mylinks.ui.DetailScreen
 import net.reddec.mylinks.ui.LibraryScreen
 import net.reddec.mylinks.ui.LoginScreen
 import net.reddec.mylinks.ui.MyLinksTheme
-import net.reddec.mylinks.ui.ReaderScreen
 import net.reddec.mylinks.ui.SettingsScreen
 import net.reddec.mylinks.ui.TagsScreen
 
@@ -106,8 +105,9 @@ private fun MyLinksApp(viewModel: MyLinksViewModel) {
         if (screen is Screen.Detail && opened == null) screen = Screen.Library
     }
 
-    BackHandler(enabled = state.readingRowId != null || screen != Screen.Library) {
-        if (state.readingRowId != null) viewModel.closeReader() else screen = Screen.Library
+    BackHandler(enabled = screen != Screen.Library) {
+        if (screen is Screen.Detail) viewModel.closeDetail()
+        screen = Screen.Library
     }
 
     Box(
@@ -120,18 +120,9 @@ private fun MyLinksApp(viewModel: MyLinksViewModel) {
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
         ) {
-            val reading = state.readingRowId?.let { id -> state.bookmarks.firstOrNull { it.rowId == id } }
-
             when {
                 state.booting -> Unit
                 !state.signedIn -> LoginScreen(state, viewModel::signIn)
-                reading != null -> ReaderScreen(
-                    bookmark = reading,
-                    text = state.readerText,
-                    loading = state.readerLoading,
-                    onBack = viewModel::closeReader,
-                    onRefresh = viewModel::refreshReader,
-                )
 
                 screen == Screen.Tags -> TagsScreen(
                     tags = state.tags,
@@ -158,8 +149,12 @@ private fun MyLinksApp(viewModel: MyLinksViewModel) {
                 opened != null -> DetailScreen(
                     bookmark = opened,
                     knownTags = state.tags,
-                    onBack = { screen = Screen.Library },
-                    onRead = { viewModel.openReader(opened.rowId) },
+                    text = state.detailText,
+                    textLoading = state.detailTextLoading,
+                    onBack = {
+                        viewModel.closeDetail()
+                        screen = Screen.Library
+                    },
                     onOpen = { openUrl(context, opened.url) },
                     onShare = { shareUrl(context, opened.title, opened.url) },
                     onAddTag = { viewModel.addTag(opened.rowId, it) },
@@ -177,7 +172,10 @@ private fun MyLinksApp(viewModel: MyLinksViewModel) {
                     onDateFilter = viewModel::setDateFilter,
                     onSync = { viewModel.sync(manual = true) },
                     onAdd = { viewModel.openAdd() },
-                    onOpen = { screen = Screen.Detail(it.rowId) },
+                    onOpen = {
+                        screen = Screen.Detail(it.rowId)
+                        viewModel.openDetail(it.rowId)
+                    },
                     onSettings = { screen = Screen.Settings },
                     onClearFilters = viewModel::clearFilters,
                 )

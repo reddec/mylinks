@@ -46,10 +46,11 @@ data class UiState(
     val backgroundSync: Boolean = true,
     val offlineText: Boolean = true,
     val knownServers: List<String> = emptyList(),
-    /** Non-null while the reader is open. */
-    val readingRowId: Long? = null,
-    val readerText: String = "",
-    val readerLoading: Boolean = false,
+    val downloadingText: Boolean = false,
+    /** Article text for the bookmark currently open, straight from the mirror. */
+    val detailTextRowId: Long? = null,
+    val detailText: String = "",
+    val detailTextLoading: Boolean = false,
     val authError: String? = null,
     val message: String? = null,
     /** Non-null while the save sheet is open; the string is the URL to pre-fill. */
@@ -176,7 +177,8 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
         lastAttemptAt = System.currentTimeMillis()
         state = state.copy(syncing = true)
         viewModelScope.launch {
-            val outcome = SyncEngine(prefs, store).run(force = manual)
+            val engine = SyncEngine(prefs, store)
+            val outcome = engine.syncBookmarks(force = manual)
             state = state.copy(
                 syncing = false,
                 online = isOnline(getApplication()),
@@ -193,6 +195,18 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
                 SyncOutcome.NotConfigured -> Unit
             }
             reload()
+
+            // Bookmarks are usable at this point; the article text keeps streaming in behind.
+            if (outcome is SyncOutcome.Ok && prefs.offlineText) {
+                state = state.copy(downloadingText = true)
+                engine.downloadText { cached ->
+                    withContext(Dispatchers.Main) { state = state.copy(cachedArticles = cached) }
+                }
+                state = state.copy(
+                    downloadingText = false,
+                    cachedArticles = withContext(Dispatchers.IO) { store.countWithContent() },
+                )
+            }
         }
     }
 
@@ -253,29 +267,15 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
         reload()
     }
 
-    // -------------------------------------------------------------------- reader
+    // ---------------------------------------------------------------- article text
 
-    /** Opens the article text: from the local mirror, or downloaded once when online. */
-    fun openReader(rowId: Long) {
-        state = state.copy(readingRowId = rowId, readerLoading = true, readerText = "")
-        loadReader(rowId, force = false)
-    }
-
-    fun refreshReader() {
-        val rowId = state.readingRowId ?: return
-        state = state.copy(readerLoading = true)
-        loadReader(rowId, force = true)
-    }
-
-    fun closeReader() {
-        state = state.copy(readingRowId = null, readerText = "", readerLoading = false)
-    }
-
-    private fun loadReader(rowId: Long, force: Boolean) {
+    /** Loads the article text for the open bookmark; fetches it once when the mirror has none. */
+    fun openDetail(rowId: Long) {
+        state = state.copy(detailTextRowId = rowId, detailTextLoading = true, detailText = "")
         viewModelScope.launch {
             val cached = withContext(Dispatchers.IO) { store.contentFor(rowId) }
-            if (!force && cached.isNotBlank()) {
-                state = state.copy(readerText = cached, readerLoading = false)
+            if (cached.isNotBlank()) {
+                state = state.copy(detailText = cached, detailTextLoading = false)
                 return@launch
             }
 
@@ -286,7 +286,6 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
                         ""
                     } else {
                         Api(prefs.server, prefs.token).readable(serverId).also { text ->
-                            // Marks the row as checked even when the server has no text.
                             store.saveContent(rowId, text)
                         }
                     }
@@ -297,12 +296,16 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
             }
 
             state = state.copy(
-                readerText = fetched.ifBlank { cached },
-                readerLoading = false,
+                detailText = fetched,
+                detailTextLoading = false,
+                cachedArticles = withContext(Dispatchers.IO) { store.countWithContent() },
                 online = isOnline(getApplication()),
-                message = if (fetched.isBlank() && cached.isBlank()) "No text cached for this link" else null,
             )
         }
+    }
+
+    fun closeDetail() {
+        state = state.copy(detailTextRowId = null, detailText = "", detailTextLoading = false)
     }
 
     // ------------------------------------------------------------------ internals

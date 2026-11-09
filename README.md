@@ -17,8 +17,9 @@ shared with the web UI. No Google services, no analytics, no account beyond your
   existing bookmark from its detail screen.
 - **Quick filter.** Tap tag chips under the search field; the list narrows instantly. Chips
   combine as AND, and the selected ones float to the front.
-- **Read offline.** Shiori's extracted article text is stored on the phone (a few articles per
-  sync, or on demand), so `Read` opens the full text with the radio off — plain text, no web view.
+- **Read offline.** Shiori's extracted article text is downloaded for *every* bookmark in the
+  background and shown inline on the bookmark page, so reading costs no extra tap and works with
+  the radio off — plain text, no web view.
 - **All your tags.** A dedicated tag screen — alphabetical, with counts, searchable and
   multi-select — instead of a strip that scrolls off the screen.
 - **Search by date.** Presets (today, 7 days, 30 days, this year) plus an arbitrary range from
@@ -30,25 +31,20 @@ shared with the web UI. No Google services, no analytics, no account beyond your
 
 Captured on an AOSP Android 16 device image (no Google APIs) against a live Shiori 1.8.0.
 
-| Library | Tag filters | Reading offline |
+| Library | Tag filters | Bookmark, article inline |
 |---|---|---|
-| <img src="docs/screenshots/library.png" width="240" alt="Library with day groups"> | <img src="docs/screenshots/tags.png" width="240" alt="Tag screen with counts and multi-select"> | <img src="docs/screenshots/reader.png" width="240" alt="Reader showing cached article text in airplane mode"> |
-| Search, day groups, and a `Tags` entry instead of a scrolling strip. | Every tag, alphabetical with counts; selection is the filter. | Cached article text, read with the radio off. |
+| <img src="docs/screenshots/library.png" width="240" alt="Library with day groups"> | <img src="docs/screenshots/tags.png" width="240" alt="Tag screen with counts and multi-select"> | <img src="docs/screenshots/detail.png" width="240" alt="Bookmark page with the cached article text shown inline"> |
+| Search, day groups, and a `Tags` entry instead of a scrolling strip. | Every tag, alphabetical with counts; selection is the filter. | Metadata, actions, then the article itself — no extra tap, no browser. |
 
-| Library (dark) | Bookmark | Save a link |
+| Library (dark) | Save a link | Date filter |
 |---|---|---|
-| <img src="docs/screenshots/library-dark.png" width="240" alt="Library in dark mode"> | <img src="docs/screenshots/detail.png" width="240" alt="Bookmark detail with Read as the primary action"> | <img src="docs/screenshots/save-link.png" width="240" alt="Save-a-link sheet"> |
-| Same palette at night. | Read first, then browser, share, delete. | Opened from the share sheet with the URL already in place. |
+| <img src="docs/screenshots/library-dark.png" width="240" alt="Library in dark mode"> | <img src="docs/screenshots/save-link.png" width="240" alt="Save-a-link sheet"> | <img src="docs/screenshots/date-filter.png" width="240" alt="Date filter sheet"> |
+| Same palette at night. | Opened from the share sheet with the URL already in place. | Presets plus an arbitrary range. |
 
-| Date filter | Nothing matches | Offline queue |
+| Nothing matches | Offline queue | Sign in |
 |---|---|---|
-| <img src="docs/screenshots/date-filter.png" width="240" alt="Date filter sheet"> | <img src="docs/screenshots/empty-state.png" width="240" alt="Empty filter state"> | <img src="docs/screenshots/offline-queue.png" width="240" alt="Offline queue with a pending bookmark"> |
-| Presets plus an arbitrary range. | Tag filters are AND-ed, so this is the honest empty state. | A link saved in airplane mode: accent dot, "1 queued". |
-
-| Sign in |  |  |
-|---|---|---|
-| <img src="docs/screenshots/sign-in.png" width="240" alt="Sign in screen with URL validation and recent servers"> |  |  |
-| Exact URL required, recent servers suggested, credentials offered to password managers. |  |  |
+| <img src="docs/screenshots/empty-state.png" width="240" alt="Empty filter state"> | <img src="docs/screenshots/offline-queue.png" width="240" alt="Offline queue with a pending bookmark"> | <img src="docs/screenshots/sign-in.png" width="240" alt="Sign in screen with URL validation and recent servers"> |
+| Tag filters are AND-ed, so this is the honest empty state. | A link saved in airplane mode: accent dot, "1 queued". | Exact URL required, recent servers suggested. |
 
 ## Use it
 
@@ -148,9 +144,11 @@ Pull is last-writer-wins by `modifiedAt`. Local edits are never overwritten mid-
 push happens first.
 
 Article text is fetched from `GET /api/v1/bookmarks/{id}/readable`, which returns the readable
-copy Shiori already extracted when it crawled the page. Each sync downloads up to eight missing
-articles, newest first; the toggle in settings turns that off. A row that the server has no text
-for is marked checked anyway, so it is not retried on every sync.
+copy Shiori already extracted when it crawled the page. The bookmark sync finishes first so the
+library is usable immediately, then **every** missing article is downloaded in batches of twenty
+(newest first), with the header showing the running count; a failure simply resumes next sync.
+The toggle in settings turns it off. A bookmark the server has no text for is marked checked
+anyway, so it is not retried on every sync.
 
 Sessions are Shiori's JWT with `rememberMe`, so they last 30 days; after that the sign-in screen
 comes back with your server and username pre-filled. Shiori 1.8 has no bookmark endpoints on its

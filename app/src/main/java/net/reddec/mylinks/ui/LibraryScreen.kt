@@ -147,6 +147,7 @@ private fun SyncStatus(state: UiState) {
     val scheme = MaterialTheme.colorScheme
     val text = when {
         state.syncing -> "syncing"
+        state.downloadingText -> "${state.cachedArticles} articles"
         !state.online && state.pending > 0 -> "${state.pending} queued"
         !state.online -> "offline"
         state.pending > 0 -> "${state.pending} queued"
@@ -168,7 +169,7 @@ private fun SyncStatus(state: UiState) {
                 tint = scheme.onSurfaceVariant,
             )
 
-            state.syncing || state.pending > 0 -> Box(
+            state.syncing || state.pending > 0 || state.downloadingText -> Box(
                 Modifier
                     .size(5.dp)
                     .background(scheme.primary, CircleShape)

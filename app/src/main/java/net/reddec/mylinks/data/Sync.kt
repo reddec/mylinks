@@ -20,7 +20,17 @@ sealed interface SyncOutcome {
  */
 class SyncEngine(private val prefs: Prefs, private val store: Store) {
 
-    suspend fun run(force: Boolean = false): SyncOutcome = withContext(Dispatchers.IO) {
+    /**
+     * Bookmarks first (fast, makes the library usable), then every article Shiori has text for.
+     * [downloadText] is reported separately so the UI can show the library while text streams in.
+     */
+    suspend fun run(force: Boolean = false): SyncOutcome {
+        val outcome = syncBookmarks(force)
+        if (outcome is SyncOutcome.Ok && prefs.offlineText) downloadText()
+        return outcome
+    }
+
+    suspend fun syncBookmarks(force: Boolean = false): SyncOutcome = withContext(Dispatchers.IO) {
         if (prefs.server.isBlank()) return@withContext SyncOutcome.NotConfigured
         if (prefs.token.isNullOrBlank()) return@withContext SyncOutcome.NeedsLogin
 
@@ -30,7 +40,6 @@ class SyncEngine(private val prefs: Prefs, private val store: Store) {
         try {
             push(api)
             pull(api, full)
-            if (prefs.offlineText) prefetchText(api)
             prefs.lastSync = System.currentTimeMillis()
             if (full) prefs.lastFullSync = prefs.lastSync
             SyncOutcome.Ok(store.countBookmarks(), full)
@@ -95,19 +104,39 @@ class SyncEngine(private val prefs: Prefs, private val store: Store) {
     }
 
     /**
-     * Downloads the extracted article text for a few bookmarks per sync, newest first, so links
-     * can be read on a plane. A failure here must never fail the sync itself.
+     * Pulls the extracted text of *every* bookmark Shiori has a copy of, newest first, in batches.
+     * It goes through Shiori (never the sites themselves) and stops quietly on the first failure,
+     * leaving the rest for the next sync. [onProgress] receives the running cached-article count.
      */
-    private fun prefetchText(api: Api) {
-        for (rowId in store.rowIdsMissingContent(TEXT_PER_SYNC)) {
-            val serverId = store.serverIdFor(rowId) ?: continue
-            val text = try {
-                api.readable(serverId)
-            } catch (_: Exception) {
-                return // offline or a broken bookmark: try again next sync
+    suspend fun downloadText(onProgress: suspend (Int) -> Unit = {}): Int = withContext(Dispatchers.IO) {
+        if (prefs.token.isNullOrBlank()) return@withContext 0
+        val api = Api(prefs.server, prefs.token)
+
+        var downloaded = 0
+        while (true) {
+            val batch = store.rowIdsMissingContent(TEXT_BATCH)
+            if (batch.isEmpty()) break
+
+            var progressed = false
+            for (rowId in batch) {
+                val serverId = store.serverIdFor(rowId) ?: continue
+                val text = try {
+                    api.readable(serverId)
+                } catch (e: Api.AuthError) {
+                    break
+                } catch (_: Exception) {
+                    return@withContext downloaded // offline: the next sync continues where this stopped
+                }
+                // Saving marks the row checked even when Shiori has no text for it.
+                store.saveContent(rowId, text)
+                progressed = true
+                downloaded++
             }
-            store.saveContent(rowId, text)
+            if (!progressed) break
+            onProgress(store.countWithContent())
         }
+        onProgress(store.countWithContent())
+        downloaded
     }
 
     private fun pull(api: Api, full: Boolean) {
@@ -138,6 +167,6 @@ class SyncEngine(private val prefs: Prefs, private val store: Store) {
 
     private companion object {
         const val FULL_SYNC_INTERVAL = 12L * 60L * 60L * 1000L
-        const val TEXT_PER_SYNC = 8
+        const val TEXT_BATCH = 20
     }
 }
