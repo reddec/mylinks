@@ -1,6 +1,7 @@
 name: release
 
 # Tag v1.1.0 → run the checks, build a signed APK, publish it as a GitHub release.
+# Nothing else triggers this workflow: branch pushes and pull requests run nothing.
 on:
   push:
     tags: ["v*"]
@@ -23,12 +24,23 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages
+      # The runner image already ships an Android SDK, so no third-party setup action is needed.
+      - name: Android SDK
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1 || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under $SDK"
+            ls -R "$SDK" | head -40 || true
+            exit 1
+          fi
+          echo "using $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          ls "$SDK/platforms" "$SDK/build-tools"
 
       # The keystore never lives in the repository: it arrives base64-encoded from secrets and is
       # written straight into the (gitignored) paths the Gradle signing config reads.
@@ -74,20 +86,21 @@ jobs:
           mv app/build/outputs/apk/release/app-release.apk "dist/mylinks-${VERSION}.apk"
           cd dist && sha256sum "mylinks-${VERSION}.apk" > SHA256SUMS.txt && cat SHA256SUMS.txt
 
-      - name: Verify the artifact is signed for this version
+      - name: Verify the artifact matches the tag
         run: |
           set -euo pipefail
-          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          "$APKSIGNER" verify --print-certs "dist/mylinks-${VERSION}.apk"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "dist/mylinks-${VERSION}.apk" \
-            | grep -E "^package:" | tee /tmp/badging.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs \
+            "dist/mylinks-${VERSION}.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging \
+            "dist/mylinks-${VERSION}.apk" | grep -E "^package:" | tee /tmp/badging.txt
           grep -q "versionName='${VERSION}'" /tmp/badging.txt
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          name: MyLinks ${{ github.ref_name }}
-          files: |
-            dist/mylinks-*.apk
-            dist/SHA256SUMS.txt
-          generate_release_notes: true
-          draft: false
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --title "MyLinks ${VERSION}" \
+            --generate-notes \
+            "dist/mylinks-${VERSION}.apk" dist/SHA256SUMS.txt
