@@ -7,6 +7,25 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Local builds derive the version from git, exactly like CI does from the tag, so a hand-built
+// APK never reports a different version than the published release.
+fun gitOutput(vararg args: String): String? = try {
+    val process = ProcessBuilder("git", *args)
+        .directory(rootDir)
+        .redirectError(ProcessBuilder.Redirect.DISCARD)
+        .start()
+    val text = process.inputStream.bufferedReader().readText().trim()
+    if (process.waitFor() == 0 && text.isNotEmpty()) text else null
+} catch (_: Exception) {
+    null
+}
+
+val gitVersionName: String = gitOutput("describe", "--tags", "--abbrev=0")
+    ?.removePrefix("v")
+    ?.takeIf { it.matches(Regex("""\d+\.\d+\.\d+.*""")) }
+    ?: "1.1.0"
+val gitVersionCode: Int = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull() ?: 1
+
 // A locally generated key signs release builds when keystore.properties is present; without it
 // the release APK stays unsigned (as before) instead of failing the build.
 val keystoreProperties = rootProject.file("keystore.properties")
@@ -24,10 +43,9 @@ android {
         applicationId = "net.reddec.mylinks"
         minSdk = 26
         targetSdk = 36
-        // CI passes these from the git tag (-PversionName/-PversionCode); plain local builds
-        // fall back to the values below.
-        versionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 2
-        versionName = providers.gradleProperty("versionName").orNull ?: "1.1.0"
+        // CI passes both explicitly from the tag; local builds derive the same values from git.
+        versionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: gitVersionCode
+        versionName = providers.gradleProperty("versionName").orNull ?: gitVersionName
     }
 
     buildFeatures {
