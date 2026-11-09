@@ -8,3 +8,5 @@ local.properties
 *.jks
 .DS_Store
 .pi/
+keystore.properties
+dist/

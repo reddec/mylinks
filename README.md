@@ -49,11 +49,31 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 `./build.sh` uses the toolchain staged in `.build-env/` (JDK 21, Gradle 8.14.6, Android SDK 36)
 because this machine's `$HOME` is read-only. On a normal machine use `./gradlew` with your own
-JDK 17+ and `ANDROID_HOME`:
+JDK 17+ and `ANDROID_HOME`.
+
+### Building a signed release APK
+
+`app-release.apk` is 1.65 MB (R8 + resource shrinking). Signing is opt-in: create a key once, then
+release builds are signed with it; without a key the release APK is simply left unsigned.
 
 ```bash
-./gradlew :app:assembleRelease       # 1.6 MB R8-minified APK, needs your own signing config
+keytool -genkeypair -keystore release.keystore -alias mylinks \
+        -keyalg RSA -keysize 4096 -validity 10000
+cat > keystore.properties <<EOF
+storeFile=release.keystore
+storePassword=your-password
+keyAlias=mylinks
+keyPassword=your-password
+EOF
+
+./build.sh :app:assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
+.build-env/android-sdk/build-tools/36.0.0/apksigner verify --print-certs \
+    app/build/outputs/apk/release/app-release.apk
 ```
+
+`keystore.properties`, `*.keystore` and `dist/` are gitignored — the signing key never enters the
+repository. Keep it: Android only replaces an installed app in place when the signature matches.
 
 Sign in with the address of your instance. A bare `host:port` is fine — MyLinks tries `https`
 first and falls back to plain `http`, which is what most LAN and funnel setups need.

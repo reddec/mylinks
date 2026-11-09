@@ -1,9 +1,19 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// A locally generated key signs release builds when keystore.properties is present; without it
+// the release APK stays unsigned (as before) instead of failing the build.
+val keystoreProperties = rootProject.file("keystore.properties")
+val signing = if (keystoreProperties.exists()) {
+    Properties().apply { keystoreProperties.inputStream().use { load(it) } }
+} else {
+    null
 }
 
 android {
@@ -23,8 +33,22 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        if (signing != null) {
+            create("release") {
+                storeFile = rootProject.file(signing.getProperty("storeFile"))
+                storePassword = signing.getProperty("storePassword")
+                keyAlias = signing.getProperty("keyAlias")
+                keyPassword = signing.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (signing != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
