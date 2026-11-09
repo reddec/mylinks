@@ -19,6 +19,25 @@ shared with the web UI. No Google services, no analytics, no account beyond your
 - **Delayed sync.** Sync on launch, on resume, on pull-to-refresh, right after a save, and every
   6 hours in the background. Everything queued while offline is replayed in order.
 
+## Screenshots
+
+Captured on an AOSP Android 16 device image (no Google APIs) against a live Shiori 1.8.0.
+
+| Library | Dark | Bookmark |
+|---|---|---|
+| <img src="docs/screenshots/library.png" width="240" alt="Library with day groups and tag chips"> | <img src="docs/screenshots/library-dark.png" width="240" alt="Library in dark mode"> | <img src="docs/screenshots/detail.png" width="240" alt="Bookmark detail with tags and actions"> |
+| Search, tag chips and day groups. Tags come from the server, colours from the palette. | Same palette at night. | Full URL, tags, and the two actions that matter. |
+
+| Save a link | Date filter | Nothing matches |
+|---|---|---|
+| <img src="docs/screenshots/save-link.png" width="240" alt="Save-a-link sheet"> | <img src="docs/screenshots/date-filter.png" width="240" alt="Date filter sheet"> | <img src="docs/screenshots/empty-state.png" width="240" alt="Empty filter state"> |
+| Opened from the share sheet with the URL already in place. | Presets plus an arbitrary range. | Tag filters are AND-ed, so this is the honest empty state. |
+
+| Offline queue | Sign in |
+|---|---|
+| <img src="docs/screenshots/offline-queue.png" width="240" alt="Offline queue with a pending bookmark"> | <img src="docs/screenshots/sign-in.png" width="240" alt="Sign in screen"> |
+| A link saved in airplane mode: accent dot, "1 queued", badge in the header. | A bare `host:port` works — https is tried, then plain http. |
+
 ## Use it
 
 Requirements: Android 8.0 (API 26) or newer, and a reachable Shiori 1.8.x instance.
