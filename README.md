@@ -14,6 +14,10 @@ shared with the web UI. No Google services, no analytics, no account beyond your
   existing bookmark from its detail screen.
 - **Quick filter.** Tap tag chips under the search field; the list narrows instantly. Chips
   combine as AND, and the selected ones float to the front.
+- **Read offline.** Shiori's extracted article text is stored on the phone (a few articles per
+  sync, or on demand), so `Read` opens the full text with the radio off — plain text, no web view.
+- **All your tags.** A dedicated tag screen — alphabetical, with counts, searchable and
+  multi-select — instead of a strip that scrolls off the screen.
 - **Search by date.** Presets (today, 7 days, 30 days, this year) plus an arbitrary range from
   Material's range picker. The list is grouped under day headers.
 - **Delayed sync.** Sync on launch, on resume, on pull-to-refresh, right after a save, and every
@@ -23,20 +27,25 @@ shared with the web UI. No Google services, no analytics, no account beyond your
 
 Captured on an AOSP Android 16 device image (no Google APIs) against a live Shiori 1.8.0.
 
-| Library | Dark | Bookmark |
+| Library | Tag filters | Reading offline |
 |---|---|---|
-| <img src="docs/screenshots/library.png" width="240" alt="Library with day groups and tag chips"> | <img src="docs/screenshots/library-dark.png" width="240" alt="Library in dark mode"> | <img src="docs/screenshots/detail.png" width="240" alt="Bookmark detail with tags and actions"> |
-| Search, tag chips and day groups. Tags come from the server, colours from the palette. | Same palette at night. | Full URL, tags, and the two actions that matter. |
+| <img src="docs/screenshots/library.png" width="240" alt="Library with day groups"> | <img src="docs/screenshots/tags.png" width="240" alt="Tag screen with counts and multi-select"> | <img src="docs/screenshots/reader.png" width="240" alt="Reader showing cached article text in airplane mode"> |
+| Search, day groups, and a `Tags` entry instead of a scrolling strip. | Every tag, alphabetical with counts; selection is the filter. | Cached article text, read with the radio off. |
 
-| Save a link | Date filter | Nothing matches |
+| Library (dark) | Bookmark | Save a link |
 |---|---|---|
-| <img src="docs/screenshots/save-link.png" width="240" alt="Save-a-link sheet"> | <img src="docs/screenshots/date-filter.png" width="240" alt="Date filter sheet"> | <img src="docs/screenshots/empty-state.png" width="240" alt="Empty filter state"> |
-| Opened from the share sheet with the URL already in place. | Presets plus an arbitrary range. | Tag filters are AND-ed, so this is the honest empty state. |
+| <img src="docs/screenshots/library-dark.png" width="240" alt="Library in dark mode"> | <img src="docs/screenshots/detail.png" width="240" alt="Bookmark detail with Read as the primary action"> | <img src="docs/screenshots/save-link.png" width="240" alt="Save-a-link sheet"> |
+| Same palette at night. | Read first, then browser, share, delete. | Opened from the share sheet with the URL already in place. |
 
-| Offline queue | Sign in |
-|---|---|
-| <img src="docs/screenshots/offline-queue.png" width="240" alt="Offline queue with a pending bookmark"> | <img src="docs/screenshots/sign-in.png" width="240" alt="Sign in screen"> |
-| A link saved in airplane mode: accent dot, "1 queued", badge in the header. | A bare `host:port` works — https is tried, then plain http. |
+| Date filter | Nothing matches | Offline queue |
+|---|---|---|
+| <img src="docs/screenshots/date-filter.png" width="240" alt="Date filter sheet"> | <img src="docs/screenshots/empty-state.png" width="240" alt="Empty filter state"> | <img src="docs/screenshots/offline-queue.png" width="240" alt="Offline queue with a pending bookmark"> |
+| Presets plus an arbitrary range. | Tag filters are AND-ed, so this is the honest empty state. | A link saved in airplane mode: accent dot, "1 queued". |
+
+| Sign in |  |  |
+|---|---|---|
+| <img src="docs/screenshots/sign-in.png" width="240" alt="Sign in screen with URL validation and recent servers"> |  |  |
+| Exact URL required, recent servers suggested, credentials offered to password managers. |  |  |
 
 ## Use it
 
@@ -75,8 +84,11 @@ EOF
 `keystore.properties`, `*.keystore` and `dist/` are gitignored — the signing key never enters the
 repository. Keep it: Android only replaces an installed app in place when the signature matches.
 
-Sign in with the address of your instance. A bare `host:port` is fine — MyLinks tries `https`
-first and falls back to plain `http`, which is what most LAN and funnel setups need.
+Sign in with the exact address of your instance, scheme included (`http://box:8080` or
+`https://shiori.example.com`) — the same URL you would open in a browser. Nothing is guessed: a
+missing scheme is reported inline instead of silently retried over the other protocol. Once you
+have signed in, the address and username are remembered, and recently used servers are offered as
+suggestions while typing.
 
 ## How offline and sync work
 
@@ -101,6 +113,11 @@ A sync is **push, then pull**:
 
 Pull is last-writer-wins by `modifiedAt`. Local edits are never overwritten mid-queue because the
 push happens first.
+
+Article text is fetched from `GET /api/v1/bookmarks/{id}/readable`, which returns the readable
+copy Shiori already extracted when it crawled the page. Each sync downloads up to eight missing
+articles, newest first; the toggle in settings turns that off. A row that the server has no text
+for is marked checked anyway, so it is not retried on every sync.
 
 Sessions are Shiori's JWT with `rememberMe`, so they last 30 days; after that the sign-in screen
 comes back with your server and username pre-filled. Shiori 1.8 has no bookmark endpoints on its
@@ -186,6 +203,7 @@ app/src/main/java/net/reddec/mylinks/
 | Create | `POST /api/bookmarks` |
 | Add tags | `PUT /api/bookmarks/tags` |
 | Delete | `DELETE /api/bookmarks` |
+| Article text | `GET /api/v1/bookmarks/{id}/readable` |
 
 All requests send `Authorization: Bearer <token>`.
 
@@ -208,6 +226,9 @@ unless `MYLINKS_E2E_SERVER` is set, so the normal suite never touches the networ
 
 - Tag removal from a bookmark, renames and bulk edits are not implemented (Shiori needs a full
   `PUT /api/bookmarks` for that); tag *additions* are.
+- The reader shows plain text: no images, no link targets, no per-article typography settings.
+- Article text costs storage and sync time, so it is capped at eight new articles per sync; older
+  ones fill in over successive syncs, or immediately when you press the refresh icon in the reader.
 - Search is local only, so it cannot match archived page bodies that were never mirrored.
 - One server, one account per install.
 - The JWT is stored in the app's private `SharedPreferences`, not encrypted with the Keystore.

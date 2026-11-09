@@ -26,14 +26,11 @@ fun normalizeUrl(input: String): String {
     return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) trimmed else "https://$trimmed"
 }
 
-/**
- * Addresses to try when signing in. A bare "host:port" is ambiguous, so https is tried first
- * and plain http second — self-hosted boxes on a LAN often speak only http.
- */
-fun serverCandidates(raw: String): List<String> {
+/** The address exactly as entered, or null when the scheme is missing. */
+fun exactServer(raw: String): String? {
     val trimmed = raw.trim().trimEnd('/')
-    if (trimmed.isEmpty()) return emptyList()
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return listOf(trimmed)
-    val host = trimmed.removePrefix("//")
-    return listOf("https://$host", "http://$host")
+    if (trimmed.isEmpty()) return null
+    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return null
+    val host = trimmed.substringAfter("://")
+    return if (host.isBlank()) null else trimmed
 }

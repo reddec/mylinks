@@ -64,7 +64,7 @@ class Store(private val helper: Db) {
 
     fun get(rowId: Long): Bookmark? = queryOne("b.row_id = ?", arrayOf(rowId.toString()))
 
-    fun tagCounts(limit: Int = 80): List<TagCount> = db.rawQuery(
+    fun tagCounts(limit: Int = 500): List<TagCount> = db.rawQuery(
         "SELECT tag, COUNT(*) AS c FROM bookmark_tags GROUP BY tag ORDER BY c DESC, tag ASC LIMIT ?",
         arrayOf(limit.toString()),
     ).use { c ->
@@ -111,6 +111,48 @@ class Store(private val helper: Db) {
             localUrl != remote.url ||
             localTags != remoteTags
     }
+
+    fun contentFor(rowId: Long): String = db.rawQuery(
+        "SELECT content FROM bookmarks WHERE row_id = ?",
+        arrayOf(rowId.toString()),
+    ).use { c -> if (c.moveToFirst()) c.getString(0).orEmpty() else "" }
+
+    fun hasContent(rowId: Long): Boolean = db.rawQuery(
+        "SELECT content_at FROM bookmarks WHERE row_id = ?",
+        arrayOf(rowId.toString()),
+    ).use { c -> c.moveToFirst() && c.getLong(0) > 0 }
+
+    fun saveContent(rowId: Long, text: String) {
+        db.update(
+            "bookmarks",
+            ContentValues().apply {
+                put("content", text)
+                put("content_at", System.currentTimeMillis())
+            },
+            "row_id = ?",
+            arrayOf(rowId.toString()),
+        )
+    }
+
+    /** Newest bookmarks that the server has text for but the phone does not, yet. */
+    fun rowIdsMissingContent(limit: Int): List<Long> = db.rawQuery(
+        """
+        SELECT row_id FROM bookmarks
+        WHERE server_id IS NOT NULL AND content_at = 0
+        ORDER BY created_at DESC LIMIT ?
+        """.trimIndent(),
+        arrayOf(limit.toString()),
+    ).use { c -> buildList { while (c.moveToNext()) add(c.getLong(0)) } }
+
+    fun serverIdFor(rowId: Long): Long? = db.rawQuery(
+        "SELECT server_id FROM bookmarks WHERE row_id = ?",
+        arrayOf(rowId.toString()),
+    ).use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
+
+    fun countWithContent(): Int = db.rawQuery(
+        "SELECT COUNT(*) FROM bookmarks WHERE content_at > 0",
+        null,
+    ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 
     fun pendingDeleteIds(): Set<Long> = db.rawQuery(
         "SELECT server_id FROM outbox WHERE kind = 'delete' AND server_id IS NOT NULL",

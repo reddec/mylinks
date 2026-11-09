@@ -71,10 +71,21 @@ class ShioriApiE2ETest {
     }
 
     @Test
-    fun bareAddressFallsBackToPlainHttp() {
-        val bare = server!!.removePrefix("http://").removePrefix("https://").trimEnd('/')
-        val login = Api.login(bare, username, password)
-        assertEquals("http://$bare", login.base)
+    fun exactAddressLogsInAndKeepsTheScheme() {
+        val login = Api.login(server!!, username, password)
+        assertEquals(server!!.trimEnd('/'), login.base)
         assertTrue(login.token.isNotBlank())
+    }
+
+    @Test
+    fun bareAddressIsRejectedWithAHint() {
+        // No https/http guessing any more: an incomplete address must fail loudly.
+        val bare = server!!.removePrefix("http://").removePrefix("https://").trimEnd('/')
+        try {
+            Api.login(bare, username, password)
+            fail("a scheme-less address should not be guessed")
+        } catch (e: IOException) {
+            assertTrue("message was: ${e.message}", e.message!!.contains("http://"))
+        }
     }
 }

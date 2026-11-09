@@ -31,9 +31,23 @@ class Prefs(context: Context) {
         get() = sp.getLong("last_full_sync", 0L)
         set(value) = sp.edit().putLong("last_full_sync", value).apply()
 
+    /** Keep article text on the phone so links can be read offline. */
+    var offlineText: Boolean
+        get() = sp.getBoolean("offline_text", true)
+        set(value) = sp.edit().putBoolean("offline_text", value).apply()
+
     var backgroundSync: Boolean
         get() = sp.getBoolean("background_sync", true)
         set(value) = sp.edit().putBoolean("background_sync", value).apply()
+
+    /** Recently used addresses, newest first — offered as suggestions on the sign-in screen. */
+    fun knownServers(): List<String> =
+        sp.getString("known_servers", "").orEmpty().split("\n").filter { it.isNotBlank() }
+
+    fun rememberServer(server: String) {
+        val updated = (listOf(server) + knownServers().filter { it != server }).take(5)
+        sp.edit().putString("known_servers", updated.joinToString("\n")).apply()
+    }
 
     fun saveSession(server: String, username: String, token: String, expires: Long) {
         sp.edit()

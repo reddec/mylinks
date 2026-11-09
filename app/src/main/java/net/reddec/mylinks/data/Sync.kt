@@ -30,6 +30,7 @@ class SyncEngine(private val prefs: Prefs, private val store: Store) {
         try {
             push(api)
             pull(api, full)
+            if (prefs.offlineText) prefetchText(api)
             prefs.lastSync = System.currentTimeMillis()
             if (full) prefs.lastFullSync = prefs.lastSync
             SyncOutcome.Ok(store.countBookmarks(), full)
@@ -93,6 +94,22 @@ class SyncEngine(private val prefs: Prefs, private val store: Store) {
         }
     }
 
+    /**
+     * Downloads the extracted article text for a few bookmarks per sync, newest first, so links
+     * can be read on a plane. A failure here must never fail the sync itself.
+     */
+    private fun prefetchText(api: Api) {
+        for (rowId in store.rowIdsMissingContent(TEXT_PER_SYNC)) {
+            val serverId = store.serverIdFor(rowId) ?: continue
+            val text = try {
+                api.readable(serverId)
+            } catch (_: Exception) {
+                return // offline or a broken bookmark: try again next sync
+            }
+            store.saveContent(rowId, text)
+        }
+    }
+
     private fun pull(api: Api, full: Boolean) {
         val pendingDeletes = store.pendingDeleteIds()
         if (full) store.seenClear()
@@ -121,5 +138,6 @@ class SyncEngine(private val prefs: Prefs, private val store: Store) {
 
     private companion object {
         const val FULL_SYNC_INTERVAL = 12L * 60L * 60L * 1000L
+        const val TEXT_PER_SYNC = 8
     }
 }

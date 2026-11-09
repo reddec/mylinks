@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -13,8 +14,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,13 +30,18 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import net.reddec.mylinks.R
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -160,6 +168,58 @@ fun IconAction(
     }
 }
 
+/** Boxed, icon-led search input shared by the library and the tag list. */
+@Composable
+fun SearchField(
+    query: String,
+    placeholder: String,
+    onQuery: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    keyboardOptions: KeyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier
+            .fillMaxWidth()
+            .border(1.dp, scheme.outlineVariant, RoundedCornerShape(2.dp))
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painterResource(R.drawable.ic_mdi_light_magnify),
+            null,
+            Modifier.size(16.dp),
+            tint = scheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f)) {
+            if (query.isEmpty()) {
+                Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = scheme.onSurfaceVariant)
+            }
+            BasicTextField(
+                value = query,
+                onValueChange = onQuery,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onBackground),
+                cursorBrush = SolidColor(scheme.primary),
+                keyboardOptions = keyboardOptions,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (query.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                painterResource(R.drawable.ic_ph_x_light),
+                "Clear",
+                Modifier
+                    .size(13.dp)
+                    .clickable { onQuery("") },
+                tint = scheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 /** Underlined, label-above input: the editorial alternative to a Material text field. */
 @Composable
 fun EditorialField(
@@ -172,6 +232,8 @@ fun EditorialField(
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     focusRequester: FocusRequester? = null,
+    contentType: ContentType? = null,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     Column(modifier) {
         Kicker(label)
@@ -183,10 +245,15 @@ fun EditorialField(
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onBackground),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             visualTransformation = visualTransformation,
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (focusRequester == null) Modifier else Modifier.focusRequester(focusRequester)),
+                .then(if (focusRequester == null) Modifier else Modifier.focusRequester(focusRequester))
+                .then(
+                    if (contentType == null) Modifier
+                    else Modifier.semantics { this.contentType = contentType }
+                ),
             decorationBox = { inner ->
                 Box {
                     if (value.isEmpty() && placeholder.isNotEmpty()) {

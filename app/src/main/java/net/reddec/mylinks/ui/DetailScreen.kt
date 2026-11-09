@@ -44,6 +44,7 @@ fun DetailScreen(
     bookmark: Bookmark,
     knownTags: List<TagCount>,
     onBack: () -> Unit,
+    onRead: () -> Unit,
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onAddTag: (String) -> Unit,
@@ -164,12 +165,14 @@ fun DetailScreen(
             }
 
             Spacer(Modifier.height(26.dp))
-            PrimaryButton("Open in browser", onClick = onOpen)
+            PrimaryButton("Read", onClick = onRead)
 
             Spacer(Modifier.height(10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
+                TextAction("Open in browser", color = scheme.onSurfaceVariant, onClick = onOpen)
+                Spacer(Modifier.width(18.dp))
                 TextAction("Share", color = scheme.onSurfaceVariant, onClick = onShare)
-                Spacer(Modifier.width(22.dp))
+                Spacer(Modifier.width(18.dp))
                 TextAction("Delete", color = scheme.error) { confirmDelete = true }
             }
             Spacer(Modifier.height(30.dp))

@@ -37,12 +37,19 @@ data class UiState(
     val bookmarks: List<Bookmark> = emptyList(),
     val tags: List<TagCount> = emptyList(),
     val total: Int = 0,
+    val cachedArticles: Int = 0,
     val pending: Int = 0,
     val syncing: Boolean = false,
     val signingIn: Boolean = false,
     val online: Boolean = true,
     val lastSync: Long = 0L,
     val backgroundSync: Boolean = true,
+    val offlineText: Boolean = true,
+    val knownServers: List<String> = emptyList(),
+    /** Non-null while the reader is open. */
+    val readingRowId: Long? = null,
+    val readerText: String = "",
+    val readerLoading: Boolean = false,
     val authError: String? = null,
     val message: String? = null,
     /** Non-null while the save sheet is open; the string is the URL to pre-fill. */
@@ -69,6 +76,8 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
             username = prefs.username,
             lastSync = prefs.lastSync,
             backgroundSync = prefs.backgroundSync,
+            offlineText = prefs.offlineText,
+            knownServers = prefs.knownServers(),
             online = isOnline(application),
         )
         reload()
@@ -93,6 +102,11 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
 
     fun setDateFilter(filter: DateFilter?) {
         state = state.copy(dateFilter = filter)
+        reload()
+    }
+
+    fun clearTags() {
+        state = state.copy(selectedTags = emptySet())
         reload()
     }
 
@@ -189,6 +203,11 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
         if (state.signedIn && stale) sync(manual = false)
     }
 
+    fun setOfflineText(enabled: Boolean) {
+        prefs.offlineText = enabled
+        state = state.copy(offlineText = enabled)
+    }
+
     fun setBackgroundSync(enabled: Boolean) {
         prefs.backgroundSync = enabled
         state = state.copy(backgroundSync = enabled)
@@ -208,6 +227,7 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val login = withContext(Dispatchers.IO) { Api.login(server, username, password) }
                 prefs.saveSession(login.base, username, login.token, login.expires)
+                prefs.rememberServer(login.base)
                 state = state.copy(
                     signingIn = false,
                     signedIn = true,
@@ -215,6 +235,7 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
                     username = username,
                     authError = null,
                     lastSync = prefs.lastSync,
+                    knownServers = prefs.knownServers(),
                 )
                 SyncWorker.schedule(getApplication(), prefs.backgroundSync)
                 reload()
@@ -232,6 +253,58 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
         reload()
     }
 
+    // -------------------------------------------------------------------- reader
+
+    /** Opens the article text: from the local mirror, or downloaded once when online. */
+    fun openReader(rowId: Long) {
+        state = state.copy(readingRowId = rowId, readerLoading = true, readerText = "")
+        loadReader(rowId, force = false)
+    }
+
+    fun refreshReader() {
+        val rowId = state.readingRowId ?: return
+        state = state.copy(readerLoading = true)
+        loadReader(rowId, force = true)
+    }
+
+    fun closeReader() {
+        state = state.copy(readingRowId = null, readerText = "", readerLoading = false)
+    }
+
+    private fun loadReader(rowId: Long, force: Boolean) {
+        viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) { store.contentFor(rowId) }
+            if (!force && cached.isNotBlank()) {
+                state = state.copy(readerText = cached, readerLoading = false)
+                return@launch
+            }
+
+            val fetched = withContext(Dispatchers.IO) {
+                runCatching {
+                    val serverId = store.serverIdFor(rowId)
+                    if (serverId == null || prefs.token.isNullOrBlank()) {
+                        ""
+                    } else {
+                        Api(prefs.server, prefs.token).readable(serverId).also { text ->
+                            // Marks the row as checked even when the server has no text.
+                            store.saveContent(rowId, text)
+                        }
+                    }
+                }.getOrElse { error ->
+                    Log.w("MyLinks", "could not load article text", error)
+                    ""
+                }
+            }
+
+            state = state.copy(
+                readerText = fetched.ifBlank { cached },
+                readerLoading = false,
+                online = isOnline(getApplication()),
+                message = if (fetched.isBlank() && cached.isBlank()) "No text cached for this link" else null,
+            )
+        }
+    }
+
     // ------------------------------------------------------------------ internals
 
     private data class Snapshot(
@@ -239,6 +312,7 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
         val tags: List<TagCount>,
         val pending: Int,
         val total: Int,
+        val cached: Int,
     )
 
     private fun reload(debounce: Boolean = false) {
@@ -259,6 +333,7 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
                         tags = store.tagCounts(),
                         pending = store.countPending(),
                         total = store.countBookmarks(),
+                        cached = store.countWithContent(),
                     )
                 }
             }
@@ -268,6 +343,7 @@ class MyLinksViewModel(application: Application) : AndroidViewModel(application)
                     tags = result.tags,
                     pending = result.pending,
                     total = result.total,
+                    cachedArticles = result.cached,
                 )
             }.onFailure { error ->
                 Log.w("MyLinks", "could not read the library", error)

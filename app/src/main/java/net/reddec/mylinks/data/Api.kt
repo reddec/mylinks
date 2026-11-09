@@ -77,6 +77,12 @@ class Api(private val base: String, private val token: String?) {
         call("PUT", "/api/bookmarks/tags", payload.toString())
     }
 
+    /** Shiori's extracted article text. Empty when the server never fetched the page. */
+    fun readable(serverId: Long): String {
+        val root = JSONObject(call("GET", "/api/v1/bookmarks/$serverId/readable")).unwrapped()
+        return root.optString("content").trim()
+    }
+
     fun delete(serverIds: List<Long>) {
         call("DELETE", "/api/bookmarks", JSONArray(serverIds).toString())
     }
@@ -85,15 +91,15 @@ class Api(private val base: String, private val token: String?) {
         data class Login(val base: String, val token: String, val expires: Long)
 
         /**
-         * Tries https first, then http, so a bare LAN address works without the user knowing
-         * which scheme their instance speaks.
+         * Uses the address exactly as typed. Guessing https/http and retrying hid typos and made
+         * failures ambiguous, so a missing scheme is reported instead.
          */
         fun login(rawServer: String, username: String, password: String): Login {
-            val candidates = serverCandidates(rawServer)
-            if (candidates.isEmpty()) throw IOException("Enter your Shiori address")
+            val base = exactServer(rawServer)
+                ?: throw IOException("Start the address with http:// or https://")
 
             var last: Exception? = null
-            for (candidate in candidates) {
+            for (candidate in listOf(base)) {
                 val api = Api(candidate, null)
                 try {
                     val payload = JSONObject().apply {

@@ -41,7 +41,7 @@ data class OutboxEntry(
 
 data class DateFilter(val label: String, val from: Long?, val to: Long?)
 
-class Db(context: Context) : SQLiteOpenHelper(context, "mylinks.db", null, 1) {
+class Db(context: Context) : SQLiteOpenHelper(context, "mylinks.db", null, 2) {
 
     init {
         setWriteAheadLoggingEnabled(true)
@@ -63,7 +63,9 @@ class Db(context: Context) : SQLiteOpenHelper(context, "mylinks.db", null, 1) {
                 title       TEXT NOT NULL DEFAULT '',
                 excerpt     TEXT NOT NULL DEFAULT '',
                 created_at  INTEGER NOT NULL,
-                modified_at INTEGER NOT NULL
+                modified_at INTEGER NOT NULL,
+                content     TEXT NOT NULL DEFAULT '',
+                content_at  INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -83,5 +85,10 @@ class Db(context: Context) : SQLiteOpenHelper(context, "mylinks.db", null, 1) {
         )
         db.execSQL("CREATE TABLE sync_seen(server_id INTEGER PRIMARY KEY)")
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE bookmarks ADD COLUMN content TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE bookmarks ADD COLUMN content_at INTEGER NOT NULL DEFAULT 0")
+        }
+    }
 }

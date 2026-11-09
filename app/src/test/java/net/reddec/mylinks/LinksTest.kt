@@ -2,7 +2,7 @@ package net.reddec.mylinks
 
 import net.reddec.mylinks.data.extractUrl
 import net.reddec.mylinks.data.normalizeUrl
-import net.reddec.mylinks.data.serverCandidates
+import net.reddec.mylinks.data.exactServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -34,10 +34,20 @@ class LinksTest {
     }
 
     @Test
-    fun candidatesTryHttpsThenHttp() {
-        assertEquals(listOf("https://box:8080", "http://box:8080"), serverCandidates("box:8080"))
-        assertEquals(listOf("http://box"), serverCandidates(" http://box/ "))
-        assertEquals(emptyList<String>(), serverCandidates("   "))
+    fun exactServerKeepsWhatWasTyped() {
+        assertEquals("http://box:8080", exactServer(" http://box:8080/ "))
+        assertEquals("https://shiori.example.com", exactServer("https://shiori.example.com"))
+        assertEquals("http://10.0.2.2:18080", exactServer("http://10.0.2.2:18080"))
+    }
+
+    @Test
+    fun exactServerRejectsMissingScheme() {
+        // No guessing between https and http: an incomplete address is reported instead.
+        assertNull(exactServer("box:8080"))
+        assertNull(exactServer("10.0.2.2:18080"))
+        assertNull(exactServer("shiori.example.com"))
+        assertNull(exactServer("https://"))
+        assertNull(exactServer("   "))
     }
 
     @Test

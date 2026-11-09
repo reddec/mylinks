@@ -22,8 +22,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
@@ -46,16 +44,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.reddec.mylinks.R
 import net.reddec.mylinks.UiState
 import net.reddec.mylinks.data.Bookmark
 import net.reddec.mylinks.data.DateFilter
-import net.reddec.mylinks.data.TagCount
 import net.reddec.mylinks.data.dayHeader
 import net.reddec.mylinks.data.hostOf
 import net.reddec.mylinks.data.relativeTime
@@ -66,6 +61,7 @@ fun LibraryScreen(
     state: UiState,
     onQuery: (String) -> Unit,
     onToggleTag: (String) -> Unit,
+    onOpenTags: () -> Unit,
     onDateFilter: (DateFilter?) -> Unit,
     onSync: () -> Unit,
     onAdd: () -> Unit,
@@ -79,12 +75,18 @@ fun LibraryScreen(
         Column(Modifier.fillMaxSize()) {
             LibraryHeader(state, onSync, onSettings)
             Spacer(Modifier.height(10.dp))
-            SearchBar(state.query, state.total, onQuery)
-            if (state.tags.isNotEmpty()) {
-                TagStrip(state.tags, state.selectedTags, onToggleTag)
+            SearchField(
+                query = state.query,
+                placeholder = if (state.total > 0) "Search ${state.total} links" else "Search your library",
+                onQuery = onQuery,
+                modifier = Modifier.padding(horizontal = 22.dp),
+            )
+            if (state.selectedTags.isNotEmpty()) {
+                SelectedTagStrip(state.selectedTags, onToggleTag)
             }
             FilterRow(
                 state = state,
+                onOpenTags = onOpenTags,
                 onOpenDate = { showDateSheet = true },
                 onClearFilters = onClearFilters,
             )
@@ -179,74 +181,27 @@ private fun SyncStatus(state: UiState) {
     }
 }
 
+/** Only the active filters live on the list; the full tag list is its own screen. */
 @Composable
-private fun SearchBar(query: String, total: Int, onQuery: (String) -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 22.dp)
-            .border(1.dp, scheme.outlineVariant, RoundedCornerShape(2.dp))
-            .padding(horizontal = 12.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            painterResource(R.drawable.ic_mdi_light_magnify),
-            null,
-            Modifier.size(16.dp),
-            tint = scheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.width(10.dp))
-        Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) {
-                Text(
-                    if (total > 0) "Search $total links" else "Search your library",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-            BasicTextField(
-                value = query,
-                onValueChange = onQuery,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onBackground),
-                cursorBrush = SolidColor(scheme.primary),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        if (query.isNotEmpty()) {
-            Spacer(Modifier.width(8.dp))
-            Icon(
-                painterResource(R.drawable.ic_ph_x_light),
-                "Clear search",
-                Modifier
-                    .size(13.dp)
-                    .clickable { onQuery("") },
-                tint = scheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun TagStrip(tags: List<TagCount>, selected: Set<String>, onToggle: (String) -> Unit) {
+private fun SelectedTagStrip(selected: Set<String>, onToggle: (String) -> Unit) {
     LazyRow(
         modifier = Modifier.padding(top = 12.dp),
         contentPadding = PaddingValues(horizontal = 22.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val ordered = tags.sortedWith(
-            compareByDescending<TagCount> { it.name in selected }.thenByDescending { it.count }.thenBy { it.name }
-        )
-        items(ordered, key = { it.name }) { tag ->
-            TagChip(tag.name, tag.name in selected) { onToggle(tag.name) }
+        items(selected.sorted(), key = { it }) { tag ->
+            TagChip(tag, selected = true) { onToggle(tag) }
         }
     }
 }
 
 @Composable
-private fun FilterRow(state: UiState, onOpenDate: () -> Unit, onClearFilters: () -> Unit) {
+private fun FilterRow(
+    state: UiState,
+    onOpenTags: () -> Unit,
+    onOpenDate: () -> Unit,
+    onClearFilters: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     val filter = state.dateFilter
     Row(
@@ -255,6 +210,31 @@ private fun FilterRow(state: UiState, onOpenDate: () -> Unit, onClearFilters: ()
             .padding(horizontal = 22.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(2.dp))
+                .border(
+                    1.dp,
+                    if (state.selectedTags.isEmpty()) scheme.outlineVariant else scheme.primary,
+                    RoundedCornerShape(2.dp),
+                )
+                .clickable(onClick = onOpenTags)
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painterResource(R.drawable.ic_mdi_light_tag),
+                null,
+                Modifier.size(13.dp),
+                tint = if (state.selectedTags.isEmpty()) scheme.onSurfaceVariant else scheme.primary,
+            )
+            Spacer(Modifier.width(6.dp))
+            Meta(
+                if (state.selectedTags.isEmpty()) "Tags" else "Tags · ${state.selectedTags.size}",
+                color = if (state.selectedTags.isEmpty()) scheme.onSurfaceVariant else scheme.primary,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
         Row(
             Modifier
                 .clip(RoundedCornerShape(2.dp))

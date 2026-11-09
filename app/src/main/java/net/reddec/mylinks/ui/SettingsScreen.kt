@@ -37,6 +37,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onSyncNow: () -> Unit,
     onBackgroundSync: (Boolean) -> Unit,
+    onOfflineText: (Boolean) -> Unit,
     onSignOut: () -> Unit,
 ) {
     var confirmSignOut by remember { mutableStateOf(false) }
@@ -72,6 +73,31 @@ fun SettingsScreen(
             )
             SettingRow("Queued changes", state.pending.toString())
             SettingRow("Mirrored links", state.total.toString())
+            SettingRow("Articles offline", "${state.cachedArticles} of ${state.total}")
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Kicker("Article text offline")
+                    Spacer(Modifier.height(4.dp))
+                    Meta("Downloads a few articles per sync for offline reading")
+                }
+                Switch(
+                    checked = state.offlineText,
+                    onCheckedChange = onOfflineText,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = scheme.onPrimary,
+                        checkedTrackColor = scheme.primary,
+                        uncheckedThumbColor = scheme.onSurfaceVariant,
+                        uncheckedTrackColor = scheme.surfaceVariant,
+                    ),
+                )
+            }
+            Hairline()
 
             Row(
                 Modifier
