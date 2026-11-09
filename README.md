@@ -56,13 +56,19 @@ Requirements: Android 8.0 (API 26) or newer, and a reachable Shiori 1.8.x instan
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-`./build.sh` uses the toolchain staged in `.build-env/` (JDK 21, Gradle 8.14.6, Android SDK 36)
-because this machine's `$HOME` is read-only. On a normal machine use `./gradlew` with your own
-JDK 17+ and `ANDROID_HOME`.
+Sign in with the exact address of your instance, scheme included (`http://box:8080` or
+`https://shiori.example.com`) — the same URL you would open in a browser. Nothing is guessed: a
+missing scheme is reported inline instead of silently retried over the other protocol. Once you
+have signed in, the address and username are remembered, and recently used servers are offered as
+suggestions while typing.
+
+`./build.sh` is a convenience wrapper around a toolchain staged in `.build-env/` (useful in
+sandboxes where `$HOME` is read-only). Normally just use `./gradlew` with JDK 17+ and
+`ANDROID_HOME` pointing at an SDK with platform 36.
 
 ### Building a signed release APK
 
-`app-release.apk` is 1.65 MB (R8 + resource shrinking). Signing is opt-in: create a key once, then
+`app-release.apk` is ~1.6 MB (R8 + resource shrinking). Signing is opt-in: create a key once, then
 release builds are signed with it; without a key the release APK is simply left unsigned.
 
 ```bash
@@ -84,11 +90,34 @@ EOF
 `keystore.properties`, `*.keystore` and `dist/` are gitignored — the signing key never enters the
 repository. Keep it: Android only replaces an installed app in place when the signature matches.
 
-Sign in with the exact address of your instance, scheme included (`http://box:8080` or
-`https://shiori.example.com`) — the same URL you would open in a browser. Nothing is guessed: a
-missing scheme is reported inline instead of silently retried over the other protocol. Once you
-have signed in, the address and username are remembered, and recently used servers are offered as
-suggestions while typing.
+### Releasing
+
+Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds a
+signed APK and publishes it as a GitHub release (`mylinks-<version>.apk` + `SHA256SUMS.txt`).
+`versionName` comes from the tag, `versionCode` from the commit count, so nothing needs editing
+before a release.
+
+One-time setup:
+
+1. Create the signing key (prints everything you need, including the base64 blob):
+
+   ```bash
+   ./scripts/make-keystore.sh
+   ```
+
+2. Add the four secrets at *Settings → Secrets and variables → Actions*:
+   `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+
+3. Release:
+
+   ```bash
+   git tag -a v1.1.0 -m "MyLinks 1.1.0"
+   git push origin v1.1.0
+   ```
+
+Without `KEYSTORE_BASE64` the workflow fails on purpose rather than publishing an APK nobody can
+upgrade over. Pull requests and pushes to `main` run only the checks (`.github/workflows/ci.yml`),
+no secrets needed.
 
 ## How offline and sync work
 
@@ -237,3 +266,8 @@ unless `MYLINKS_E2E_SERVER` is set, so the normal suite never touches the networ
   navigation and OEM quirks are still unseen.
 - Incremental sync only sees *new* bookmarks quickly; edits made in the web UI arrive with the
   next full pull (at most 12 hours, or immediately on pull-to-refresh).
+
+## License
+
+GPL-3.0-or-later — see [LICENSE](LICENSE). MyLinks is an independent client: it talks to Shiori's
+HTTP API and contains none of Shiori's code, so Shiori's own MIT license is unaffected.

@@ -24,8 +24,10 @@ android {
         applicationId = "net.reddec.mylinks"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.0"
+        // CI passes these from the git tag (-PversionName/-PversionCode); plain local builds
+        // fall back to the values below.
+        versionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 2
+        versionName = providers.gradleProperty("versionName").orNull ?: "1.1.0"
     }
 
     buildFeatures {

@@ -1,0 +1,93 @@
+name: release
+
+# Tag v1.1.0 → run the checks, build a signed APK, publish it as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # versionCode is derived from the commit count
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      # The keystore never lives in the repository: it arrives base64-encoded from secrets and is
+      # written straight into the (gitignored) paths the Gradle signing config reads.
+      - name: Unpack signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64}" ]; then
+            echo "::error::KEYSTORE_BASE64 secret is not set — see README «Releasing»"
+            exit 1
+          fi
+          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > release.keystore
+          cat > keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${KEYSTORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          EOF
+
+      - name: Version from tag
+        run: |
+          set -euo pipefail
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+
+      - name: Unit tests and lint
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug
+
+      - name: Build signed APK
+        run: >-
+          ./gradlew :app:assembleRelease
+          -PversionName="$VERSION"
+          -PversionCode="$VERSION_CODE"
+
+      - name: Collect artifact
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          mv app/build/outputs/apk/release/app-release.apk "dist/mylinks-${VERSION}.apk"
+          cd dist && sha256sum "mylinks-${VERSION}.apk" > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Verify the artifact is signed for this version
+        run: |
+          set -euo pipefail
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$APKSIGNER" verify --print-certs "dist/mylinks-${VERSION}.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "dist/mylinks-${VERSION}.apk" \
+            | grep -E "^package:" | tee /tmp/badging.txt
+          grep -q "versionName='${VERSION}'" /tmp/badging.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: MyLinks ${{ github.ref_name }}
+          files: |
+            dist/mylinks-*.apk
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+          draft: false
