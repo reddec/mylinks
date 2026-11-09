@@ -4,7 +4,7 @@
 > **99% vibecoded, still works.** GPL-3.0-or-later.
 
 An offline-first Android companion for a self-hosted [Shiori](https://github.com/go-shiori/shiori)
-(1.8.x) library. Your links live on your phone; the server is where they are backed up and
+(1.8.0+) library. Your links live on your phone; the server is where they are backed up and
 shared with the web UI. No Google services, no analytics, no account beyond your own instance.
 
 ## What it does
@@ -48,7 +48,9 @@ Captured on an AOSP Android 16 device image (no Google APIs) against a live Shio
 
 ## Use it
 
-Requirements: Android 8.0 (API 26) or newer, and a reachable Shiori 1.8.x instance.
+Requirements: Android 8.0 (API 26) or newer, and a reachable Shiori **1.8.0 or newer** instance.
+Earlier 1.7 servers have no `/api/v1/auth` API: they cannot renew a session and ignore the
+`remember_me` flag, so the client would have to sign in again every hour.
 
 ```bash
 ./build.sh :app:assembleDebug        # debug APK (debug key, installs as-is)
@@ -59,7 +61,9 @@ Sign in with the exact address of your instance, scheme included (`http://box:80
 `https://shiori.example.com`) — the same URL you would open in a browser. Nothing is guessed: a
 missing scheme is reported inline instead of silently retried over the other protocol. Once you
 have signed in, the address and username are remembered, and recently used servers are offered as
-suggestions while typing.
+suggestions while typing. The session renews itself: a still-valid token is traded for a fresh
+thirty-day one at the first sync of its last day, so the sign-in screen only appears when the
+server actually refuses (password changed, account removed, server rebuilt).
 
 `./build.sh` is a convenience wrapper around a toolchain staged in `.build-env/` (useful in
 sandboxes where `$HOME` is read-only). Normally just use `./gradlew` with JDK 17+ and
@@ -92,9 +96,13 @@ repository. Keep it: Android only replaces an installed app in place when the si
 ### Releasing
 
 Pushing a tag that starts with `v` runs `.github/workflows/release.yml`, which tests, builds a
-signed APK and publishes it as a GitHub release (`mylinks-<version>.apk` + `SHA256SUMS.txt`).
+signed APK and publishes it as a GitHub release (`mylinks-<version>.apk` + `SHA256SUMS.txt`). The
+release body is a changelog built by `scripts/changelog.sh` from the commits since the previous
+tag, grouped by conventional-commit prefix (`feat:`, `fix:`, `docs:`, …).
 `versionName` comes from the tag, `versionCode` from the commit count, so nothing needs editing
 before a release.
+
+Preview the next changelog at any time with `./scripts/changelog.sh HEAD`.
 
 One-time setup:
 
@@ -150,9 +158,10 @@ library is usable immediately, then **every** missing article is downloaded in b
 The toggle in settings turns it off. A bookmark the server has no text for is marked checked
 anyway, so it is not retried on every sync.
 
-Sessions are Shiori's JWT with `rememberMe`, so they last 30 days; after that the sign-in screen
-comes back with your server and username pre-filled. Shiori 1.8 has no bookmark endpoints on its
-v1 API yet, so MyLinks talks to the legacy endpoints for bookmark CRUD.
+Sessions are Shiori's JWT with `remember_me`, so they last thirty days, and a still-valid token is
+exchanged for a fresh one at the first sync of its last day — the sign-in screen only returns when
+the server refuses the exchange (password changed, account removed, server rebuilt). Shiori 1.8 has
+no bookmark endpoints on its v1 API yet, so MyLinks talks to the legacy endpoints for bookmark CRUD.
 
 ## Design notes
 
@@ -205,17 +214,24 @@ things only the real server revealed are handled in `Api.kt`:
   it works whether or not the envelope is present.
 - **The login field is `expires`**, although the swagger annotation says `expiration`. Both are
   read.
+- **`remember_me`, not `rememberMe`**, is what v1.8.0 reads; with the camel-case spelling the
+token lives one hour instead of thirty days. Both are sent.
+- **A dead token does not get a 401.** The legacy endpoints return one, but `/api/bookmarks`
+  panics (`session is not exist`) and the server closes the connection with no response at all —
+  behind a reverse proxy that shows up as **502 Bad Gateway**, not as an auth error. The client
+  therefore renews (`POST /api/v1/auth/refresh`) before a token can expire, instead of waiting for
+  a rejection it would never receive.
 
 `scripts/e2e.sh` boots a throwaway Shiori on 127.0.0.1:18080 (building it from the v1.8.0 tag if
 needed) and runs the contract tests: sign in, create a bookmark, add a tag, find it on page 1 with
-parsed UTC timestamps, delete it, and confirm a wrong password and a scheme-less LAN address both
-behave.
+parsed UTC timestamps, delete it, renew the session, and confirm a wrong password, a scheme-less
+LAN address and a dead token all behave.
 
 ## Layout
 
 ```
 app/src/main/java/net/reddec/mylinks/
-  data/Api.kt      Shiori HTTP client (login, page, create, addTags, delete)
+  data/Api.kt      Shiori HTTP client (login, refresh, page, create, addTags, delete)
   data/Store.kt    all SQLite reads/writes, outbox
   data/Sync.kt     push-then-pull reconciliation
   data/Time.kt     server timestamp parsing, relative dates, day headers
@@ -230,6 +246,7 @@ app/src/main/java/net/reddec/mylinks/
 | Purpose | Endpoint |
 |---|---|
 | Sign in | `POST /api/v1/auth/login` → JWT |
+| Renew session | `POST /api/v1/auth/refresh` → JWT |
 | List (paged, 30/page) | `GET /api/bookmarks?page=N` |
 | Create | `POST /api/bookmarks` |
 | Add tags | `PUT /api/bookmarks/tags` |
@@ -241,8 +258,8 @@ All requests send `Authorization: Bearer <token>`.
 ## Tests
 
 ```bash
-./build.sh :app:testDebugUnitTest    # 11 hermetic unit tests
-./scripts/e2e.sh                     # + 3 contract tests against a live Shiori 1.8.0
+./build.sh :app:testDebugUnitTest    # 12 hermetic unit tests
+./scripts/e2e.sh                     # + 7 contract tests against a live Shiori 1.8.0
 ```
 
 The emulator run is reproducible too: `avdmanager create avd -n mylinks -k

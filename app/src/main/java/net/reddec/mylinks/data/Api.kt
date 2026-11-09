@@ -105,14 +105,13 @@ class Api(private val base: String, private val token: String?) {
                     val payload = JSONObject().apply {
                         put("username", username)
                         put("password", password)
+                        // v1.8.0 only reads "remember_me" and hands out a one-hour token otherwise;
+                        // older builds only read "rememberMe". Unknown fields are ignored.
                         put("rememberMe", true)
+                        put("remember_me", true)
                     }
                     val json = JSONObject(api.call("POST", "/api/v1/auth/login", payload.toString())).unwrapped()
-                    val token = json.optString("token")
-                    if (token.isBlank()) throw IOException("Server sent no session token")
-                    // The JSON field is "expires"; "expiration" is what the swagger doc claims.
-                    val seconds = json.optLong("expires", json.optLong("expiration", 0L))
-                    return Login(candidate, token, seconds * 1000L)
+                    return parseLogin(candidate, json)
                 } catch (e: ServerError) {
                     if (e.code == 400 || e.code == 401 || e.code == 403) {
                         throw IOException("Wrong username or password")
@@ -125,6 +124,23 @@ class Api(private val base: String, private val token: String?) {
                 }
             }
             throw IOException(last?.message ?: "Could not reach the server")
+        }
+
+        /**
+         * Trades a still-valid token for a fresh thirty-day one — the only renewal Shiori offers.
+         * An expired token is refused with 401 ([AuthError]), so renewal must not wait for it.
+         */
+        fun refresh(base: String, token: String): Login = parseLogin(
+            base,
+            JSONObject(Api(base, token).call("POST", "/api/v1/auth/refresh")).unwrapped(),
+        )
+
+        private fun parseLogin(base: String, json: JSONObject): Login {
+            val token = json.optString("token")
+            if (token.isBlank()) throw IOException("Server sent no session token")
+            // The JSON field is "expires"; "expiration" is what the swagger doc claims.
+            val seconds = json.optLong("expires", json.optLong("expiration", 0L))
+            return Login(base, token, seconds * 1000L)
         }
 
         /** Handles both the plain payload and Shiori's legacy `{"ok":..,"message":..}` envelope. */

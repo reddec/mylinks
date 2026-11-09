@@ -78,6 +78,45 @@ class ShioriApiE2ETest {
     }
 
     @Test
+    fun loginRemembersMeForThirtyDays() {
+        // v1.8.0 reads only "remember_me"; with just "rememberMe" the token dies after an hour.
+        val login = Api.login(server!!, username, password)
+        val days = (login.expires - System.currentTimeMillis()) / 86_400_000.0
+        assertTrue("session should last ~30 days, lasted $days", days > 29.0)
+    }
+
+    @Test
+    fun refreshRenewsTheTokenAndRefusesADeadOne() {
+        val login = Api.login(server!!, username, password)
+        val fresh = Api.refresh(login.base, login.token)
+        // Same-second renewals produce a byte-identical JWT (identical claims), so check the
+        // claims and that the token works, not that the string changed.
+        val days = (fresh.expires - System.currentTimeMillis()) / 86_400_000.0
+        assertTrue("renewed session should last ~30 days, lasted $days", days > 29.0)
+        assertTrue("renewed token must still work", Api(fresh.base, fresh.token).page(1).maxPage >= 0)
+
+        try {
+            Api.refresh(login.base, "abc.def.ghi")
+            fail("a dead token cannot be renewed")
+        } catch (_: Api.AuthError) {
+            // This is the only case that may sign the user out.
+        }
+    }
+
+    @Test
+    fun deadTokenDropsTheConnectionInsteadOfAnswering401() {
+        // The legacy endpoints panic on an invalid token ("session is not exist") and the server
+        // closes the connection with no response, which a reverse proxy reports as 502. So the
+        // client cannot rely on 401 there — it renews before a token can die.
+        try {
+            Api(server!!, "abc.def.ghi").page(1)
+            fail("an unauthenticated request must not succeed")
+        } catch (e: IOException) {
+            assertTrue("was: $e", e !is Api.AuthError)
+        }
+    }
+
+    @Test
     fun bareAddressIsRejectedWithAHint() {
         // No https/http guessing any more: an incomplete address must fail loudly.
         val bare = server!!.removePrefix("http://").removePrefix("https://").trimEnd('/')

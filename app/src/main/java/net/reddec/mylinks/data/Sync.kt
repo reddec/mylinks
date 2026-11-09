@@ -34,6 +34,21 @@ class SyncEngine(private val prefs: Prefs, private val store: Store) {
         if (prefs.server.isBlank()) return@withContext SyncOutcome.NotConfigured
         if (prefs.token.isNullOrBlank()) return@withContext SyncOutcome.NeedsLogin
 
+        // Renew while the token is still valid: Shiori cannot renew a dead one, and its legacy
+        // endpoints do not even answer 401, they panic and drop the connection (a proxy turns that
+        // into a 502). Only a refused renewal means the account has to sign in again.
+        if (prefs.tokenExpires - System.currentTimeMillis() < TOKEN_RENEW_BEFORE) {
+            try {
+                val fresh = Api.refresh(prefs.server, prefs.token!!)
+                prefs.saveSession(fresh.base, prefs.username, fresh.token, fresh.expires)
+            } catch (_: Api.AuthError) {
+                prefs.clearSession()
+                return@withContext SyncOutcome.NeedsLogin
+            } catch (e: Exception) {
+                Log.w("MyLinks", "token renewal failed", e) // offline: sync with the old one
+            }
+        }
+
         val api = Api(prefs.server, prefs.token)
         val full = force || System.currentTimeMillis() - prefs.lastFullSync > FULL_SYNC_INTERVAL
 
@@ -167,6 +182,7 @@ class SyncEngine(private val prefs: Prefs, private val store: Store) {
 
     private companion object {
         const val FULL_SYNC_INTERVAL = 12L * 60L * 60L * 1000L
+        const val TOKEN_RENEW_BEFORE = 24L * 60L * 60L * 1000L
         const val TEXT_BATCH = 20
     }
 }
