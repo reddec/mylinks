@@ -56,12 +56,34 @@ jobs:
             echo "::error::KEYSTORE_BASE64 secret is not set — see README «Releasing»"
             exit 1
           fi
+          if [ -z "${KEYSTORE_PASSWORD}" ]; then
+            echo "::error::KEYSTORE_PASSWORD secret is not set"
+            exit 1
+          fi
+
           printf '%s' "${KEYSTORE_BASE64}" | base64 -d > release.keystore
+          if [ "$(stat -c%s release.keystore)" -lt 1000 ]; then
+            echo "::error::the decoded keystore is suspiciously small — re-check KEYSTORE_BASE64"
+            exit 1
+          fi
+
+          # An unset KEY_ALIAS used to reach Gradle as an empty alias and surface as a cryptic
+          # KeytoolException, so default it and prove the key is really there before building.
+          ALIAS="${KEY_ALIAS:-mylinks}"
+          if ! keytool -list -keystore release.keystore -storepass "${KEYSTORE_PASSWORD}" \
+                 -alias "${ALIAS}" > /dev/null 2>&1; then
+            echo "::error::alias '${ALIAS}' not found (or KEYSTORE_PASSWORD is wrong). Entries:"
+            keytool -list -keystore release.keystore -storepass "${KEYSTORE_PASSWORD}" 2>/dev/null \
+              | grep -iE "PrivateKeyEntry|trustedCertEntry" || echo "  (none readable)"
+            exit 1
+          fi
+          echo "signing key '${ALIAS}' found"
+
           cat > keystore.properties <<EOF
           storeFile=release.keystore
           storePassword=${KEYSTORE_PASSWORD}
-          keyAlias=${KEY_ALIAS}
-          keyPassword=${KEY_PASSWORD}
+          keyAlias=${ALIAS}
+          keyPassword=${KEY_PASSWORD:-${KEYSTORE_PASSWORD}}
           EOF
 
       - name: Version from tag
@@ -100,7 +122,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" \
-            --title "MyLinks ${VERSION}" \
-            --generate-notes \
-            "dist/mylinks-${VERSION}.apk" dist/SHA256SUMS.txt
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber \
+              "dist/mylinks-${VERSION}.apk" dist/SHA256SUMS.txt
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "MyLinks ${VERSION}" \
+              --generate-notes \
+              "dist/mylinks-${VERSION}.apk" dist/SHA256SUMS.txt
+          fi

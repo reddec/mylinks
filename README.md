@@ -108,8 +108,9 @@ One-time setup:
    ./scripts/make-keystore.sh
    ```
 
-2. Add the four secrets at *Settings → Secrets and variables → Actions*:
-   `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
+2. Add three secrets at *Settings → Secrets and variables → Actions*:
+   `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_PASSWORD`. Optionally add `KEY_ALIAS`
+   (it defaults to `mylinks`); `KEY_PASSWORD` defaults to `KEYSTORE_PASSWORD`.
 
 3. Release:
 
