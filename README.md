@@ -1,5 +1,8 @@
 # MyLinks
 
+> [!NOTE]
+> **99% vibecoded, still works.** GPL-3.0-or-later.
+
 An offline-first Android companion for a self-hosted [Shiori](https://github.com/go-shiori/shiori)
 (1.8.x) library. Your links live on your phone; the server is where they are backed up and
 shared with the web UI. No Google services, no analytics, no account beyond your own instance.
