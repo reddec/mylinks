@@ -119,8 +119,8 @@ One-time setup:
    ```
 
 Without `KEYSTORE_BASE64` the workflow fails on purpose rather than publishing an APK nobody can
-upgrade over. Pull requests and pushes to `main` run only the checks (`.github/workflows/ci.yml`),
-no secrets needed.
+upgrade over. CI runs **only** for `v*` tags: pushes to branches and pull requests trigger nothing.
+Run the checks yourself with `./build.sh :app:testDebugUnitTest :app:lintDebug`.
 
 ## How offline and sync work
 
